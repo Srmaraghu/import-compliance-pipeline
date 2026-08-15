@@ -4,3 +4,5 @@ __pycache__/
 .env
 data/_cache/
 .DS_Store
+output/*.json
+output/*.md
