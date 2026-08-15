@@ -96,3 +96,47 @@ class GeminiClient:
         raise RuntimeError(
             f"Failed after {max_retries} retries. Last error: {last_exception}"
         ) from last_exception
+        
+    def generate_json(
+        self,
+        system_prompt: str,
+        user_content,
+        max_retries: int = 5,
+        initial_delay: float = 3.0,
+    ) -> dict:
+        """Generate JSON response from Gemini with retry logic."""
+        if isinstance(user_content, str):
+            parts = [system_prompt, user_content]
+        else:
+            parts = [system_prompt] + user_content
+        delay = initial_delay
+        last_exception = None
+        for attempt in range(max_retries):
+            try:
+                client = self._get_client()
+                response = client.models.generate_content(
+                    model=self.model,
+                    contents=parts,
+                )
+                raw = response.text.strip()
+                raw = re.sub(r"^```(?:json)?\s*", "", raw)
+                raw = re.sub(r"\s*```$", "", raw).strip()
+                return json.loads(raw)
+            except json.JSONDecodeError as e:
+                logger.warning("JSON parse failed attempt %d: %s", attempt, e)
+                if attempt < max_retries - 1:
+                    time.sleep(delay)
+                    delay *= 2
+                    continue
+                raise
+            except Exception as e:
+                last_exception = e
+                if self._is_rate_limit_error(str(e)):
+                    if attempt < max_retries - 1:
+                        self._rotate_key()
+                        logger.warning("Rate limit, rotating key, retrying in %.1fs...", delay)
+                        time.sleep(delay)
+                        delay *= 2
+                        continue
+                raise
+        raise RuntimeError(f"Failed after {max_retries} retries. Last error: {last_exception}")
