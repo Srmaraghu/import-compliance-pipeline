@@ -1,7 +1,9 @@
 """
 Pipeline - extracts from buyer form, call notes, and PDF datasheet using Gemini vision.
+Reconciles all three sources and generates a Markdown compliance draft.
 """
 import json
+import logging
 from pathlib import Path
 from dotenv import load_dotenv
 from . import tools, prompts
@@ -9,8 +11,11 @@ from .gemini_client import GeminiClient
 
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = REPO_ROOT / "data"
+OUTPUT_DIR = REPO_ROOT / "output"
 
 DATASHEET_URL = (
     "https://www.deyeinverter.com/deyeinverter/2023/10/07/"
@@ -63,6 +68,62 @@ def extract_datasheet() -> dict:
     return result
 
 
+def generate_draft(reconciled: dict, fetched_live: bool) -> str:
+    """Turn the reconciled record into a human-readable Markdown compliance draft."""
+    client = GeminiClient()
+    print("\nGenerating compliance draft...")
+
+    fetch_note = (
+        "The datasheet was fetched LIVE from the manufacturer URL for this run."
+        if fetched_live
+        else "NOTE: live fetch of the manufacturer datasheet URL failed; an offline "
+             "cached copy of the same file was used instead."
+    )
+    user_content = (
+        f"Reconciled record:\n\n{json.dumps(reconciled, indent=2)}\n\n"
+        f"Fetch status: {fetch_note}"
+    )
+    return client.generate_text(prompts.DRAFT_SYSTEM, user_content)
+
+
+def reconcile(datasheet: dict, buyer_form: dict, call_notes: dict) -> dict:
+    """Cross-reference all three extractions with Gemini and flag conflicts/pending items."""
+    client = GeminiClient()
+    print("\nReconciling extractions across all three sources...")
+
+    payload = {
+        "datasheet_extraction": datasheet,
+        "buyer_form_extraction": buyer_form,
+        "call_notes_extraction": call_notes,
+    }
+    user_content = "Reconcile the following three extractions:\n\n" + json.dumps(payload, indent=2)
+    result = client.generate_json(prompts.RECONCILIATION_SYSTEM, user_content)
+    return result
+
+
+def save_outputs(state: dict) -> None:
+    """Write structured_output.json and draft.md to the output directory."""
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    structured = {
+        "datasheet_source_url": DATASHEET_URL,
+        "datasheet_fetched_live": state["datasheet"].get("_fetched_live", False),
+        "extractions": {
+            "datasheet": state["datasheet"],
+            "buyer_form": state["buyer_form"],
+            "call_notes": state["call_notes"],
+        },
+        "reconciled": state["reconciled"],
+    }
+    (OUTPUT_DIR / "structured_output.json").write_text(
+        json.dumps(structured, indent=2), encoding="utf-8"
+    )
+    (OUTPUT_DIR / "draft.md").write_text(state["draft"], encoding="utf-8")
+    logger.info("Wrote output/structured_output.json and output/draft.md")
+    print("\nSaved: output/structured_output.json")
+    print("Saved: output/draft.md")
+
+
 def run():
     """Run the pipeline."""
     sources = load_sources()
@@ -81,8 +142,21 @@ def run():
     print("\nExtracted from datasheet:")
     print(json.dumps(datasheet_data, indent=2))
 
-    return {
+    reconciled = reconcile(datasheet_data, buyer_form_data, call_notes_data)
+    print("\nReconciled record:")
+    print(json.dumps(reconciled, indent=2))
+
+    fetched_live = datasheet_data.get("_fetched_live", False)
+    draft = generate_draft(reconciled, fetched_live)
+    print("\n--- DRAFT PREVIEW (first 500 chars) ---")
+    print(draft[:500])
+
+    result = {
         "buyer_form": buyer_form_data,
         "call_notes": call_notes_data,
-        "datasheet": datasheet_data
+        "datasheet": datasheet_data,
+        "reconciled": reconciled,
+        "draft": draft,
     }
+    save_outputs(result)
+    return result
