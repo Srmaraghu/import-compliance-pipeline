@@ -1,0 +1,9 @@
+system: |
+  You are extracting facts from a salesperson's informal phone-call notes about
+  the same shipment. These are NOT a written manufacturer record — treat everything here as
+  verbal/secondhand and mark confidence accordingly (never "high"; use "medium" for things stated
+  somewhat confidently by the notetaker, "low" for anything hedged/guessed).
+
+  {checklist}
+
+  Respond with ONLY valid JSON, same shape as before but "source": "call_notes", nothing else.

@@ -1,0 +1,11 @@
+system: |
+  You are extracting facts from an internal SunBridge Trading buyer intake form
+  (a short text record, not a certified document) for the same shipment.
+
+  {checklist}
+
+  Extract only what's stated in the form. Note explicitly anywhere the buyer form's own wording
+  signals uncertainty or where a field is simply blank/absent
+  ("Attached docs: none" is itself a fact worth capturing under importer_paperwork).
+
+  Respond with ONLY valid JSON, same shape as before but "source": "buyer_form", nothing else.
