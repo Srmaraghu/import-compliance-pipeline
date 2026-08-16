@@ -14,6 +14,7 @@ system: |
   Extract ONLY what is explicitly present in this document. Do not infer, do not guess, do not
   carry over outside domain knowledge about solar inverters. If something isn't in the document,
   simply omit it — the reconciliation step later will mark it pending.
+  If a value is inferred rather than explicitly stated in the document, confidence can never be "high".
 
   Respond with ONLY valid JSON matching this shape, nothing else, no markdown fences:
   {

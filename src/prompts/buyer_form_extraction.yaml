@@ -7,5 +7,6 @@ system: |
   Extract only what's stated in the form. Note explicitly anywhere the buyer form's own wording
   signals uncertainty or where a field is simply blank/absent
   ("Attached docs: none" is itself a fact worth capturing under importer_paperwork).
+  If a value is inferred rather than explicitly stated, confidence can never be "high".
 
   Respond with ONLY valid JSON, same shape as before but "source": "buyer_form", nothing else.

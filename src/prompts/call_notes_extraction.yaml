@@ -2,7 +2,7 @@ system: |
   You are extracting facts from a salesperson's informal phone-call notes about
   the same shipment. These are NOT a written manufacturer record — treat everything here as
   verbal/secondhand and mark confidence accordingly (never "high"; use "medium" for things stated
-  somewhat confidently by the notetaker, "low" for anything hedged/guessed).
+  somewhat confidently by the notetaker, "low" for anything hedged/guessed or inferred).
 
   {checklist}
 
