@@ -44,8 +44,15 @@ class PipelineState(TypedDict, total=False):
 
 # Helper funcitons
 
+# single shared client so key rotation state persists across all nodes
+_gemini_client: GeminiClient | None = None
+
+
 def _client() -> GeminiClient:
-    return GeminiClient()
+    global _gemini_client
+    if _gemini_client is None:
+        _gemini_client = GeminiClient()
+    return _gemini_client
 
 
 def _call_json(system: str, user_content) -> Dict[str, Any]:
