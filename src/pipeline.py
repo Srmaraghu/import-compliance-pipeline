@@ -7,13 +7,15 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Any, Dict, List, TypedDict
+from typing import Any, Dict, List, Type, TypeVar, TypedDict
 
 from dotenv import load_dotenv
 from langgraph.graph import END, StateGraph
+from pydantic import BaseModel, ValidationError
 
 from . import prompts, tools
 from .gemini_client import GeminiClient
+from .schema import ExtractionResult, ReconciledRecord
 
 load_dotenv()
 
@@ -63,6 +65,26 @@ def _call_text(system: str, user_content: str) -> str:
     return _client().generate_text(system, user_content)
 
 
+T = TypeVar("T", bound=BaseModel)
+
+
+def _call_json_validated(system: str, user_content, model_cls: Type[T]) -> T:
+    """Call Gemini expecting JSON, then validate against a Pydantic model.
+    On validation failure, retries once with the error appended to the prompt."""
+    raw = _call_json(system, user_content)
+    try:
+        return model_cls.model_validate(raw)
+    except ValidationError as e:
+        logger.warning("Schema validation failed, retrying with error hint: %s", e)
+        hint = f"\n\nYour previous response failed validation with this error:\n{e}\nPlease fix and try again."
+        if isinstance(user_content, str):
+            retry_content = user_content + hint
+        else:
+            retry_content = user_content + [hint]
+        raw2 = _call_json(system, retry_content)
+        return model_cls.model_validate(raw2)
+
+
 #  Nodes
 
 def fetch_datasheet_node(state: PipelineState) -> PipelineState:
@@ -96,23 +118,23 @@ def extract_datasheet_node(state: PipelineState) -> PipelineState:
     for i, img_b64 in enumerate(state["datasheet_images_b64"]):
         content_blocks.append(f"\n\nPage {i + 1} image:")
         content_blocks.append({"inline_data": {"mime_type": "image/jpeg", "data": img_b64}})
-    result = _call_json(prompts.DATASHEET_EXTRACTION_SYSTEM, content_blocks)
+    result = _call_json_validated(prompts.DATASHEET_EXTRACTION_SYSTEM, content_blocks, ExtractionResult)
     time.sleep(4)
-    return {"extraction_datasheet": result}
+    return {"extraction_datasheet": result.model_dump()}
 
 
 def extract_buyer_form_node(state: PipelineState) -> PipelineState:
     # extracts structured fields from the plain-text buyer intake form
-    result = _call_json(prompts.BUYER_FORM_EXTRACTION_SYSTEM, state["buyer_form_text"])
+    result = _call_json_validated(prompts.BUYER_FORM_EXTRACTION_SYSTEM, state["buyer_form_text"], ExtractionResult)
     time.sleep(4)
-    return {"extraction_buyer_form": result}
+    return {"extraction_buyer_form": result.model_dump()}
 
 
 def extract_call_notes_node(state: PipelineState) -> PipelineState:
     # extracts fields from informal call notes; all values treated as low confidence
-    result = _call_json(prompts.CALL_NOTES_EXTRACTION_SYSTEM, state["call_notes_text"])
+    result = _call_json_validated(prompts.CALL_NOTES_EXTRACTION_SYSTEM, state["call_notes_text"], ExtractionResult)
     time.sleep(4)
-    return {"extraction_call_notes": result}
+    return {"extraction_call_notes": result.model_dump()}
 
 
 def reconcile_node(state: PipelineState) -> PipelineState:
@@ -123,9 +145,9 @@ def reconcile_node(state: PipelineState) -> PipelineState:
         "call_notes_extraction": state["extraction_call_notes"],
     }
     user_content = "Reconcile the following three extractions:\n\n" + json.dumps(payload, indent=2)
-    result = _call_json(prompts.RECONCILIATION_SYSTEM, user_content)
+    result = _call_json_validated(prompts.RECONCILIATION_SYSTEM, user_content, ReconciledRecord)
     time.sleep(4)
-    return {"reconciled": result}
+    return {"reconciled": result.model_dump()}
 
 
 def draft_node(state: PipelineState) -> PipelineState:

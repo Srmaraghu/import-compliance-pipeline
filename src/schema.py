@@ -48,21 +48,28 @@ class Field_(BaseModel):
     values: List[SourcedValue] = Field(default_factory=list)
     conflict: bool = False
     conflict_note: Optional[str] = None
-    resolved_status: str = Field(
+    resolved_status: Optional[str] = Field(
+        default=None,
         description=(
             "One of: 'established' (written, uncontested), "
             "'reported_verbally' (call notes only, unverified), "
             "'disputed' (sources disagree), "
-            "'pending' (no source has it)."
+            "'pending' (no source has it). "
+            "Required on reconciled records, optional on raw extractions."
         )
     )
 
 
 class ExtractionResult(BaseModel):
-    """Raw per-source extraction, before reconciliation."""
+    """Raw per-source extraction, before reconciliation.
+    Fields are kept as a loose dict since each source has different structure.
+    Strict validation happens at the reconciliation stage via ReconciledRecord.
+    """
     source: SourceName
-    fields: List[Field_]
+    fields: Optional[List[Field_]] = None  # present for datasheet/call notes
     raw_notes: Optional[str] = None
+
+    model_config = {"extra": "allow"}  # allow extra keys from buyer_form structure
 
 
 class ReconciledRecord(BaseModel):
