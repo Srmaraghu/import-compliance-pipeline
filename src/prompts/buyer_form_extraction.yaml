@@ -9,4 +9,17 @@ system: |
   ("Attached docs: none" is itself a fact worth capturing under importer_paperwork).
   If a value is inferred rather than explicitly stated, confidence can never be "high".
 
-  Respond with ONLY valid JSON, same shape as before but "source": "buyer_form", nothing else.
+  Respond with ONLY valid JSON matching this shape exactly, nothing else, no markdown fences:
+  {
+    "source": "buyer_form",
+    "fields": [
+      {
+        "field_name": "string, e.g. 'model number'",
+        "checklist_category": "one of product_identity | manufacturer_identity | test_evidence | labeling | importer_paperwork",
+        "values": [
+          {"source": "buyer_form", "value": "string", "confidence": "high | medium | low", "verbatim_or_paraphrase_note": "string or null"}
+        ]
+      }
+    ],
+    "raw_notes": "any short note about what was missing or unclear in the form, or null"
+  }

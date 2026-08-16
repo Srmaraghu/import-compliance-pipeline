@@ -11,7 +11,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class SourceName(str, Enum):
@@ -37,6 +37,12 @@ class SourcedValue(BaseModel):
         description="Short note on how the value was reported, e.g. 'stated verbally, no written record'.",
     )
 
+    @field_validator("value", mode="before")
+    @classmethod
+    def coerce_null_value(cls, v):
+        # LLM sometimes returns null for missing values — coerce to empty string
+        return "" if v is None else v
+
 
 class Field_(BaseModel):
     """
@@ -61,15 +67,10 @@ class Field_(BaseModel):
 
 
 class ExtractionResult(BaseModel):
-    """Raw per-source extraction, before reconciliation.
-    Fields are kept as a loose dict since each source has different structure.
-    Strict validation happens at the reconciliation stage via ReconciledRecord.
-    """
+    """Raw per-source extraction, before reconciliation."""
     source: SourceName
-    fields: Optional[List[Field_]] = None  # present for datasheet/call notes
+    fields: List[Field_]
     raw_notes: Optional[str] = None
-
-    model_config = {"extra": "allow"}  # allow extra keys from buyer_form structure
 
 
 class ReconciledRecord(BaseModel):
