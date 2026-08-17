@@ -1,5 +1,10 @@
 """
 Utility functions for fetching and processing PDFs.
+
+Text extraction uses markitdown which preserves table structure as markdown,
+giving the LLM much cleaner input than raw pdfplumber text. Page images are
+still rasterized as a fallback for the vision model when table columns are
+ambiguous in text alone.
 """
 import base64
 import logging
@@ -8,8 +13,8 @@ from pathlib import Path
 from typing import List
 
 import pymupdf as fitz
-import pdfplumber
 import requests
+from markitdown import MarkItDown
 
 logger = logging.getLogger(__name__)
 
@@ -38,15 +43,18 @@ def fetch_pdf(url: str, timeout: int = 30) -> Path:
     return local_path
 
 
-def extract_text_per_page(pdf_path: Path) -> List[str]:
-    """Extract text from each page of PDF using pdfplumber."""
-    pages = []
-    with pdfplumber.open(str(pdf_path)) as pdf:
-        for i, page in enumerate(pdf.pages):
-            text = page.extract_text() or ""
-            pages.append(text)
-            logger.debug(f"Extracted {len(text)} chars from page {i+1}")
-    return pages
+def extract_markdown(pdf_path: Path) -> str:
+    """Extract PDF content as markdown using markitdown.
+    
+    Preserves table structure much better than plain text extraction —
+    tables come out as markdown with pipes and headers intact, so the
+    LLM can read column values without guessing the layout.
+    """
+    md = MarkItDown()
+    result = md.convert(str(pdf_path))
+    text = result.text_content or ""
+    logger.info(f"markitdown extracted {len(text)} chars from {pdf_path.name}")
+    return text
 
 
 def rasterize_pages_b64(pdf_path: Path, dpi: int = 150) -> List[str]:
@@ -67,7 +75,8 @@ def rasterize_pages_b64(pdf_path: Path, dpi: int = 150) -> List[str]:
 def fetch_datasheet(url: str, offline_fixture: Path = None) -> DatasheetContent:
     """
     Fetch manufacturer datasheet PDF with fallback to offline fixture.
-    Returns text and base64 images for vision-based extraction.
+    Text is extracted via markitdown (preserves table structure as markdown).
+    Page images are also rasterized for vision-based cross-checking.
     """
     fetched_live = True
     try:
@@ -80,19 +89,15 @@ def fetch_datasheet(url: str, offline_fixture: Path = None) -> DatasheetContent:
             fetched_live = False
         else:
             raise
-    
-    text_pages = extract_text_per_page(local_path)
+
+    # markitdown gives us the whole doc as one markdown string
+    markdown_text = extract_markdown(local_path)
     images = rasterize_pages_b64(local_path)
-    
-    logger.info(
-        f"Datasheet processed: {len(text_pages)} pages, "
-        f"{sum(len(t) for t in text_pages)} total chars"
-    )
-    
+
     return DatasheetContent(
         source_url=url,
         local_path=local_path,
-        text_by_page=text_pages,
+        text_by_page=[markdown_text],  # single entry — markitdown doesn't split by page
         page_images_b64=images,
         fetched_live=fetched_live,
     )
